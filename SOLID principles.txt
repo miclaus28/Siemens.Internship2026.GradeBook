@@ -1,0 +1,38 @@
+SOLID principles
+
+Acest document detaliază procesul de auditare și refactorizare a soluției GradeBook. Scopul intervenției a fost alinierea bazei de cod cu principiile SOLID pentru a asigura scalabilitatea și mentenabilitatea sistemului. Pe lângă corecțiile arhitecturale, s-a realizat și o aliniere a terminologiei cu domeniul de business (Grade Management).
+
+Violation 1 — Single Responsibility Principle (SRP): Misleading Naming
+Locație: Models/Item.cs, Controllers/ItemController.cs, Interfaces/IItemReader.cs, Repositories/ItemRepository.cs
+
+De ce este o încălcare: Proiectul vizează un catalog de note, însă utilizarea numelui generic Item și a câmpului Value încalcă SRP la nivel conceptual. O clasă trebuie să aibă o responsabilitate unică și clar definită, lucru imposibil de dedus dintr-o denumire abstractă. Această ambiguitate forțează dezvoltatorul să analizeze implementarea pentru a înțelege contextul, crescând riscul de a adăuga responsabilități străine entității.
+
+Fix aplicat: Am redenumit întregul domeniu pentru a fi auto-explicativ: Item -> Grade, Value -> Score. Toate interfețele și controllerele au fost actualizate pentru a reflecta această schimbare (ex. IGradeReader), asigurând o singură responsabilitate clară: gestionarea notelor școlare.
+
+Violation 2 — Single Responsibility Principle (SRP): Statistics Logic in Controller
+Locație: Controllers/GradeController.cs | Metoda: GetAll() (liniile 18–35)
+
+De ce este o încălcare: Metoda GetAll îndeplinea două roluri distincte: orchestrarea răspunsului HTTP și calcularea statisticilor de business (medie, total). Conform SRP, un controller nu ar trebui să conțină logică matematică sau de business; singura sa "muncă" este să preia cererea și să returneze un rezultat. Orice modificare în modul de calcul al mediilor ar fi forțat modificarea controllerului.
+
+Fix aplicat: Am extras logica de calcul într-un serviciu dedicat, GradeStatisticsService, injectat prin interfața IGradeStatisticsService. Acum, controllerul doar apelează serviciul, rămânând izolat de regulile de business.
+
+Violation 3 — Dependency Inversion Principle (DIP): Direct Use of Console
+Locație: Controllers/GradeController.cs | Metodele: GetAll() și GetById()
+
+De ce este o încălcare: Controllerul depindea direct de o componentă de infrastructură low-level (System.Console). Aceasta este o încălcare a DIP deoarece modulele de nivel înalt (business/controller) nu trebuie să depindă de implementări concrete (IO/Consolă). Acest cuplaj strâns făcea codul imposibil de testat unitar și rigid la schimbări (ex: trecerea la logare în cloud sau fișier).
+
+Fix aplicat: Am înlocuit apelurile Console.WriteLine cu abstracția standard .NET, ILogger<GradeController>. Aceasta este acum injectată prin constructor, permițând inversarea controlului și testabilitate totală.
+
+Violation 4 — Dependency Inversion Principle (DIP): Missing DI Registration
+Locație: Program.cs
+
+De ce este o încălcare: Deși codul folosea abstracții (interfețe), containerul de Dependency Injection nu era configurat să știe ce clasă concretă să furnizeze pentru IGradeReader. O interfață care nu poate fi rezolvată la runtime reprezintă o rupere a contractului DIP; arhitectura promite decuplare, dar sistemul nu poate funcționa fără maparea manuală a dependențelor.
+
+Fix aplicat: Am adăugat înregistrările necesare în Program.cs: builder.Services.AddSingleton<IGradeReader, GradeRepository>() și pentru noul serviciu de statistici, asigurând asamblarea corectă a componentelor la pornirea aplicației.
+
+Violation 5 — Open/Closed Principle (OCP): Design via Inheritance
+Locație: Repositories/GradeRepository.cs | Membri: protected fields și virtual methods
+
+De ce este o încălcare: Repository-ul era configurat pentru a fi extins prin moștenire, expunând starea internă (protected) și permițând modificarea comportamentului prin virtual. Această abordare încalcă OCP, deoarece clasa ar trebui să fie închisă pentru modificări interne. Extinderea prin moștenire forțează "deschiderea" clasei părinte și poate duce la efecte secundare nedorite în logica de bază.
+
+Fix aplicat: Am eliminat modificatorii protected și virtual, făcând câmpurile private. Am promovat compoziția în detrimentul moștenirii; orice funcționalitate nouă va fi adăugată prin implementarea unor interfețe noi (ex. IGradeWriter), fără a altera codul existent în GradeRepository.
